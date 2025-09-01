@@ -25,4 +25,4 @@ O trabalho realizado pela dupla:
    ```bash
    git clone <url-do-repo>
 2. **Realize o Teste no site https://www.edaplayground.com/**
-   1.Coloque o arquivo a parte do código contendo testbench,indexe o código em system verilog .sv e o txt(código de máquina representando as instruções).
+   - Coloque o arquivo a parte do código contendo testbench, indexe o código em system verilog .sv e o txt(código de máquina representando as instruções) e execute clicando em Run.
