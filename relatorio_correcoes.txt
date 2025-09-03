@@ -1,0 +1,34 @@
+RELATÓRIO DE ERROS E CORREÇÕES – riscvsingle_p1.sv
+
+1. Código original estava incompleto, com trechos truncados e '...' como placeholders.
+   ✔ Reestruturado para formar um design completo (testbench → top → CPU → controller/datapath → memórias).
+
+2. Decodificação de instruções estava parcial e incorreta.
+   ✔ Implementado maindec e aludec completos, cobrindo add, sub, and, or, xor, slt, sll, srl, addi, lw, sw, beq, jal.
+
+3. Writeback de instrução JAL ausente.
+   ✔ Adicionado mux no datapath que escreve PC+4 em rd quando opcode é JAL.
+
+4. Geração de imediatos incorreta/incompleta.
+   ✔ Implementado módulo immgen com suportes corretos para formatos I, S, B, J.
+
+5. Memórias ausentes ou incorretas.
+   ✔ Criada memória de instruções (ROM) carregando riscvtest.txt com $readmemh.
+   ✔ Criada memória de dados (RAM) word-addressed, leitura assíncrona e escrita síncrona.
+
+6. Banco de registradores incompleto.
+   ✔ Implementado regfile com leitura de x0 fixada em zero e escrita protegida (não escreve em x0).
+
+7. ALU incompleta.
+   ✔ Implementada ALU cobrindo todas as operações necessárias e sinal zero para branches.
+
+8. Sinais de controle (PCSrc, Branch, Jump) mal definidos.
+   ✔ Corrigido cálculo de PCSrc = (Branch & Zero) | Jump.
+
+9. Testbench ausente/incompleto.
+   ✔ Criado testbench com clock, reset, timeout, e checagens PASS/FAIL baseadas em mem[100] = 25.
+
+10. Ausência de defaults em decodificadores.
+    ✔ Adicionados valores default em maindec/aludec para evitar propagação de X.
+
+Essas correções tornam o design simulável em Icarus Verilog, compatível com o programa riscvtest.s e os binários em riscvtest.txt.
