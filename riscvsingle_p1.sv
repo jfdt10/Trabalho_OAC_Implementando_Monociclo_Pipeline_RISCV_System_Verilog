@@ -11,7 +11,7 @@ module testbench();
 
   // instantiate device to be tested
   top dut(clk, reset, WriteData, DataAdr, MemWrite);
-  
+
   // initialize test
   initial
     begin
@@ -62,6 +62,7 @@ module riscvsingle(input  logic        clk, reset,
   logic       ALUSrc, RegWrite, Jump, Zero;
   logic [1:0] ResultSrc, ImmSrc;
   logic [2:0] ALUControl;
+  logic       PCSrc; // sinal adicionado para controle do PC(estava faltando)
 
   controller c(Instr[6:0], Instr[14:12], Instr[30], Zero,
                ResultSrc, MemWrite, PCSrc,
@@ -92,7 +93,7 @@ module controller(input  logic [6:0] op,
              ALUSrc, RegWrite, Jump, ImmSrc, ALUOp);
   aludec  ad(op[5], funct3, funct7b5, ALUOp, ALUControl);
 
-  assign PCSrc = Branch & Zero;
+  assign PCSrc = (Branch & Zero) | Jump; // Incluindo o Jump na lógica do PCSrc para fazer o desvio incondicional
 endmodule
 
 module maindec(input  logic [6:0] op,
@@ -105,17 +106,20 @@ module maindec(input  logic [6:0] op,
 
   logic [10:0] controls;
 
+  // Incluindo o sinal Jump para formal os 11 bits de controle
   assign {RegWrite, ImmSrc, ALUSrc, MemWrite,
-          ResultSrc, Branch, ALUOp} = controls;
+          ResultSrc, Branch, ALUOp, Jump} = controls; // estava faltando o Jump definido aqui
 
   always_comb
     case(op)
     // RegWrite_ImmSrc_ALUSrc_MemWrite_ResultSrc_Branch_ALUOp_Jump
       7'b0000011: controls = 11'b1_00_1_0_01_0_00_0; // lw
       7'b0100011: controls = 11'b0_01_1_1_00_0_00_0; // sw
-      7'b0110011: controls = 11'b1_xx_0_0_00_0_10_0; // R-type 
+      7'b0110011: controls = 11'b1_00_0_0_00_0_10_0; // R-type tirei xx e coloquei 00 para não propagar X em simulação
       7'b1100011: controls = 11'b0_10_0_0_00_1_01_0; // beq
-      default:    controls = 11'bx_xx_x_x_xx_x_xx_x; // non-implemented instruction
+      7'b0010011: controls = 11'b1_00_1_0_00_0_10_0; // I-type(addi, slti, andi, ori) // foi adicionado isso?
+      7'b1101111: controls = 11'b1_11_0_0_10_0_00_1; // jal (RegWrite=1, ImmSrc=11 (J), ALUSrc=0, ResultSrc=10(PC+4), Jump=1)
+      default:    controls = 11'b0_00_0_0_00_0_00_0; // deixar caso default seguro
     endcase
 endmodule
 
@@ -176,7 +180,7 @@ module datapath(input  logic        clk, reset,
   // ALU logic
   mux2 #(32)  srcbmux(WriteData, ImmExt, ALUSrc, SrcB);
   alu         alu(SrcA, SrcB, ALUControl, ALUResult, Zero);
-  mux3 #(32)  resultmux(ALUResult, ReadData, 32'b0, ResultSrc, Result);
+  mux3 #(32)  resultmux(ALUResult, ReadData, PCPlus4, ResultSrc, Result); // ResultSrc == 10 -> PCPlus4(jal) 
 endmodule
 
 module regfile(input  logic        clk, 
@@ -204,18 +208,42 @@ module adder(input  [31:0] a, b,
 
   assign y = a + b;
 endmodule
+/*
+RegWrite: habilita escrita no Registrador.
+ImmSrc:
+00 I-type (addi/lw): Instr[31:20] 
+01 S-type (sw): Instr[31:25]::Instr[11:7]
+10 B-type (beq): assemble bits [31|30:25|11:8|7] e shift<<1
+11 J-type (jal): bits [31|19:12|20|30:21] <<1
+ALUSrc: 0 -> alu(B)=rs2; 1 -> alu(B)=ImmExt
+ALUOp:
+00 -> add (lw/sw addr)
+01 -> subtract (branch compare)
+10 -> use funct3/funct7 (R-type / OP-IMM)
+ResultSrc:
+00 -> ALUResult
+01 -> ReadData (from memory)
+10 -> PCPlus4 (jal)
+PCSrc = (Branch & Zero) | Jump;
+*/
 
 module extend(input  logic [31:7] instr,
               input  logic [1:0]  immsrc,
-              output logic [31:0] immext);
+              output logic [31:0] immext); 
  
   always_comb
     case(immsrc) 
+
+                // I-type (loads, Imediato)
+      2'b00:   immext = {{20{instr[31]}}, instr[31:20]};
+                // S-type (stores)
       2'b01:   immext = {{20{instr[31]}}, instr[31:25], instr[11:7]}; 
                // B-type (branches)
-      2'b11:   immext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0}; 
-      default: immext = 32'bx; // undefined
-    endcase             
+      2'b10:   immext = {{19{instr[31]}}, instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
+               // J-type (jal)
+      2'b11:   immext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
+      default: immext = 32'b0; // caso base
+    endcase
 endmodule
 
 module flopr #(parameter WIDTH = 8)

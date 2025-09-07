@@ -9,8 +9,8 @@
 
 #       RISC-V Assembly         Description               Address   Machine Code
 main:   addi x2, x0, 5          # x2 = 5                  0         00500113   
-        addi x3, x0, 12         # x3 = 12                 4         00C00193
-        addi x7, x3, -9         # x7 = (12 - 9) = 3       8         FF718393
+        addi x3, x0, 12         # x3 = 12                 4         00C00193   
+        addi x7, x3, -9         # x7 = (12 - 9) = 3       8         FF718393   
         or   x4, x7, x2         # x4 = (3 OR 5) = 7       C         0023E233
         and  x5, x3, x4         # x5 = (12 AND 7) = 4     10        0041F2B3
         add  x5, x5, x4         # x5 = (4 + 7) = 11       14        004282B3

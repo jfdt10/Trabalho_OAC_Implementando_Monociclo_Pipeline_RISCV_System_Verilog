@@ -1,0 +1,28 @@
+Instrução	Tipo	
+addi	I-type	addi x2, x0, 5
+add	R-type	add x5, x5, x4
+sub	R-type	sub x7, x7, x2
+and	R-type	and x5, x3, x4
+or	R-type	or x4, x7, x2
+slt	R-type	slt x4, x3, x4
+lw	I-type	lw x2, 96(x0)
+sw	S-type	sw x7, 84(x3)
+beq	B-type	beq x5, x7, end
+jal	J-type	jal x3, end 
+
+
+Formato das Instruções:
+# R-Type(add, sub, and, or, slt)
+| funct7 (7) | rs2 (5) | rs1 (5) | funct3 (3) | rd (5) | opcode (7) | 
+
+# I-Type(addi, lw)
+| imm[11:0] (12) | rs1 (5) | funct3 (3) | rd (5) | opcode (7) | 
+
+#S-Type(sw)
+| imm[11:5] (7) | rs2 (5) | rs1 (5) | funct3 (3) | imm[4:0] (5) | opcode (7) |
+
+#B-Type(Beq)
+| imm[12] (1) | imm[10:5] (6) | rs2 (5) | rs1 (5) | funct3 (3) | imm[4:1] (4) | imm[11] (1) | opcode (7) |
+
+#J-Type(jal)
+| imm[20] (1) | imm[10:1] (10) | imm[11] (1) | imm[19:12] (8) | rd (5) | opcode (7) |
