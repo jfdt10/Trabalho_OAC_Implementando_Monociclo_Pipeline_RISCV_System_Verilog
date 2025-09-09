@@ -1,14 +1,4 @@
 // ============================================================================
-// RISC-V Single-Cycle Processor (RV32I subset)
-// Versão comentada em português, com explicações de cada parte
-// e observações das correções realizadas
-// ============================================================================
-
-// Instruções de compilação/simulação no Icarus Verilog
-//COMPILE: iverilog.exe -g2012 -o riscvsingle_p1.vcd -tvvp .\riscvsingle_p1.sv
-//SIMULATE: vvp riscvsingle_p1
-
-// ============================================================================
 // TESTBENCH
 // ============================================================================
 
