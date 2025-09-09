@@ -1,6 +1,22 @@
 //COMPILE: iverilog.exe -g2012 -o riscvsingle_p1.vcd -tvvp .\riscvsingle_p1.sv
 //SIMULATE: vvp riscvsingle_p1
 
+/*
+Correções realizadas no código verilog Arquitetura Monociclo RISC-V
+====================================================================
+1. PCSrc não declarado: Adicionada declaração do sinal PCSrc no módulo riscvsingle
+2. Jump não funciona: PCSrc modificado de 'Branch & Zero' para '(Branch & Zero) | Jump'
+3. Jump não atribuído: Vetor de controle expandido de 10 para 11 bits incluindo Jump
+4. Faltam instruções: Adicionado suporte para I-type (addi, slti, andi, ori) e JAL
+5. Valores X propagam: Substituído 'xx' por '00' e casos default com zeros para evitar 'X'
+6. JAL não salva PC+4: Mux resultmux alterado de 32'b0 para PCPlus4 na terceira entrada
+7. Extend incompleto: Implementação completa dos 4 tipos de imediatos (I, S, B, J)
+
+===============================================================================
+*/
+
+// Módulo de teste que simula o funcionamento do processador
+// Gera clock, reset e verifica se o resultado final está correto
 module testbench();
 
   logic        clk;
@@ -39,6 +55,7 @@ module testbench();
     end
 endmodule
 
+// Módulo principal que conecta o processador com as memórias de instrução e dados
 module top(input  logic        clk, reset, 
            output logic [31:0] WriteData, DataAdr, 
            output logic        MemWrite);
@@ -52,6 +69,7 @@ module top(input  logic        clk, reset,
   dmem dmem(clk, MemWrite, DataAdr, WriteData, ReadData);
 endmodule
 
+// Processador RISC-V monociclo que combina unidade de controle e caminho de dados
 module riscvsingle(input  logic        clk, reset,
                    output logic [31:0] PC,
                    input  logic [31:0] Instr,
@@ -62,7 +80,8 @@ module riscvsingle(input  logic        clk, reset,
   logic       ALUSrc, RegWrite, Jump, Zero;
   logic [1:0] ResultSrc, ImmSrc;
   logic [2:0] ALUControl;
-  logic       PCSrc; // sinal adicionado para controle do PC(estava faltando)
+  // Correção: PCSrc não declarado - O sinal PCSrc estava sendo usado sem declaração
+  logic       PCSrc; // Declaração do sinal PCSrc
 
   controller c(Instr[6:0], Instr[14:12], Instr[30], Zero,
                ResultSrc, MemWrite, PCSrc,
@@ -75,6 +94,7 @@ module riscvsingle(input  logic        clk, reset,
               ALUResult, WriteData, ReadData);
 endmodule
 
+// Unidade de controle que decodifica instruções e gera sinais de controle
 module controller(input  logic [6:0] op,
                   input  logic [2:0] funct3,
                   input  logic       funct7b5,
@@ -93,9 +113,12 @@ module controller(input  logic [6:0] op,
              ALUSrc, RegWrite, Jump, ImmSrc, ALUOp);
   aludec  ad(op[5], funct3, funct7b5, ALUOp, ALUControl);
 
-  assign PCSrc = (Branch & Zero) | Jump; // Incluindo o Jump na lógica do PCSrc para fazer o desvio incondicional
+  // Correção: Jump não funciona - PCSrc original só considerava Branch & Zero
+  //Incluído Jump na lógica para suportar desvios incondicionais (JAL)
+  assign PCSrc = (Branch & Zero) | Jump;
 endmodule
 
+// Decodificador principal que identifica o tipo de instrução e gera sinais de controle básicos
 module maindec(input  logic [6:0] op,
                output logic [1:0] ResultSrc,
                output logic       MemWrite,
@@ -106,23 +129,32 @@ module maindec(input  logic [6:0] op,
 
   logic [10:0] controls;
 
-  // Incluindo o sinal Jump para formal os 11 bits de controle
+  // Correção: Jump não atribuído - Controle originalmente tinha 10 bits
+  // Expandido para 11 bits incluindo o sinal Jump no vetor de controle
   assign {RegWrite, ImmSrc, ALUSrc, MemWrite,
-          ResultSrc, Branch, ALUOp, Jump} = controls; // estava faltando o Jump definido aqui
+          ResultSrc, Branch, ALUOp, Jump} = controls;
 
   always_comb
     case(op)
     // RegWrite_ImmSrc_ALUSrc_MemWrite_ResultSrc_Branch_ALUOp_Jump
       7'b0000011: controls = 11'b1_00_1_0_01_0_00_0; // lw
       7'b0100011: controls = 11'b0_01_1_1_00_0_00_0; // sw
-      7'b0110011: controls = 11'b1_00_0_0_00_0_10_0; // R-type tirei xx e coloquei 00 para não propagar X em simulação
+      // Correção: Valores X propagam - ImmSrc original usava 'xx' no R-type
+      // Substituído 'xx' por '00' para evitar propagação de valores indefinidos
+      7'b0110011: controls = 11'b1_00_0_0_00_0_10_0; // R-type 
       7'b1100011: controls = 11'b0_10_0_0_00_1_01_0; // beq
-      7'b0010011: controls = 11'b1_00_1_0_00_0_10_0; // I-type(addi, slti, andi, ori) // foi adicionado isso?
-      7'b1101111: controls = 11'b1_11_0_0_10_0_00_1; // jal (RegWrite=1, ImmSrc=11 (J), ALUSrc=0, ResultSrc=10(PC+4), Jump=1)
-      default:    controls = 11'b0_00_0_0_00_0_00_0; // deixar caso default seguro
+      // Correção: Faltam instruções - Adicionado suporte para I-type e JAL
+      // Implementação das instruções I-type (addi, slti, andi, ori)
+      7'b0010011: controls = 11'b1_00_1_0_00_0_10_0; // I-type
+      // Implementação da instrução JAL (Jump and Link)
+      7'b1101111: controls = 11'b1_11_0_0_10_0_00_1; // jal
+      // Correção: Valores X propagam - Default original com valores 'x'
+      // Caso default com zeros para estado seguro
+      default:    controls = 11'b0_00_0_0_00_0_00_0;
     endcase
 endmodule
 
+// Decodificador da ALU que determina a operação específica baseada em funct3 e funct7
 module aludec(input  logic       opb5,
               input  logic [2:0] funct3,
               input  logic       funct7b5, 
@@ -149,6 +181,7 @@ module aludec(input  logic       opb5,
     endcase
 endmodule
 
+// Caminho de dados que implementa o fluxo de informações do processador
 module datapath(input  logic        clk, reset,
                 input  logic [1:0]  ResultSrc, 
                 input  logic        PCSrc, ALUSrc,
@@ -180,9 +213,12 @@ module datapath(input  logic        clk, reset,
   // ALU logic
   mux2 #(32)  srcbmux(WriteData, ImmExt, ALUSrc, SrcB);
   alu         alu(SrcA, SrcB, ALUControl, ALUResult, Zero);
-  mux3 #(32)  resultmux(ALUResult, ReadData, PCPlus4, ResultSrc, Result); // ResultSrc == 10 -> PCPlus4(jal) 
+  // Correção: JAL não salva PC+4 - Mux original usava 32'b0 na terceira entrada
+  // Terceira entrada do mux alterada para PCPlus4, permitindo que JAL salve o endereço de retorno
+  mux3 #(32)  resultmux(ALUResult, ReadData, PCPlus4, ResultSrc, Result); 
 endmodule
 
+// Banco de registradores com 32 registradores de 32 bits cada
 module regfile(input  logic        clk, 
                input  logic        we3, 
                input  logic [ 4:0] a1, a2, a3, 
@@ -203,6 +239,7 @@ module regfile(input  logic        clk,
   assign rd2 = (a2 != 0) ? rf[a2] : 0;
 endmodule
 
+// Somador simples de 32 bits
 module adder(input  [31:0] a, b,
              output [31:0] y);
 
@@ -227,25 +264,28 @@ ResultSrc:
 PCSrc = (Branch & Zero) | Jump;
 */
 
+// Unidade extensora de imediatos que converte valores de 25 bits para 32 bits com sinal
 module extend(input  logic [31:7] instr,
               input  logic [1:0]  immsrc,
               output logic [31:0] immext); 
  
   always_comb
     case(immsrc) 
-
+                // correção: Extend incompleto - Faltavam implementações corretas dos tipos de imediato
+                // correção: Implementação completa de todos os 4 tipos de decodificação de imediatos
                 // I-type (loads, Imediato)
       2'b00:   immext = {{20{instr[31]}}, instr[31:20]};
                 // S-type (stores)
       2'b01:   immext = {{20{instr[31]}}, instr[31:25], instr[11:7]}; 
-               // B-type (branches)
+               // B-type (branches) - Formato correto para desvios condicionais
       2'b10:   immext = {{19{instr[31]}}, instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
-               // J-type (jal)
+               // J-type (jal) - Formato correto para desvios incondicionais
       2'b11:   immext = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
       default: immext = 32'b0; // caso base
     endcase
 endmodule
 
+// Flip-flop parametrizável com reset assíncrono
 module flopr #(parameter WIDTH = 8)
               (input  logic             clk, reset,
                input  logic [WIDTH-1:0] d, 
@@ -256,6 +296,7 @@ module flopr #(parameter WIDTH = 8)
     else       q <= d;
 endmodule
 
+// Multiplexador de 2 entradas parametrizável
 module mux2 #(parameter WIDTH = 8)
              (input  logic [WIDTH-1:0] d0, d1, 
               input  logic             s, 
@@ -264,6 +305,7 @@ module mux2 #(parameter WIDTH = 8)
   assign y = s ? d1 : d0; 
 endmodule
 
+// Multiplexador de 3 entradas parametrizável
 module mux3 #(parameter WIDTH = 8)
              (input  logic [WIDTH-1:0] d0, d1, d2,
               input  logic [1:0]       s, 
@@ -272,6 +314,7 @@ module mux3 #(parameter WIDTH = 8)
   assign y = s[1] ? d2 : (s[0] ? d1 : d0); 
 endmodule
 
+// Memória de instruções que carrega o programa a ser executado
 module imem(input  logic [31:0] a,
             output logic [31:0] rd);
 
@@ -283,6 +326,7 @@ module imem(input  logic [31:0] a,
   assign rd = RAM[a[31:2]]; // word aligned
 endmodule
 
+// Memória de dados para operações de load e store
 module dmem(input  logic        clk, we,
             input  logic [31:0] a, wd,
             output logic [31:0] rd);
@@ -295,6 +339,7 @@ module dmem(input  logic        clk, we,
     if (we) RAM[a[31:2]] <= wd;
 endmodule
 
+// Unidade Lógica e Aritmética que executa operações matemáticas e lógicas
 module alu(input  logic [31:0] a, b,
            input  logic [2:0]  alucontrol,
            output logic [31:0] result,
