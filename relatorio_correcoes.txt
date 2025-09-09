@@ -30,5 +30,3 @@ RELATÓRIO DE ERROS E CORREÇÕES – riscvsingle_p1.sv
 
 10. Ausência de defaults em decodificadores.
     ✔ Adicionados valores default em maindec/aludec para evitar propagação de X.
-
-Essas correções tornam o design simulável em Icarus Verilog, compatível com o programa riscvtest.s e os binários em riscvtest.txt.
