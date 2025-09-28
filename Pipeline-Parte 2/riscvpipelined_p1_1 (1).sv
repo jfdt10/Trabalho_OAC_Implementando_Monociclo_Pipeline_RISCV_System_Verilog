@@ -89,6 +89,9 @@ module riscv(input  logic        clk, reset,
               RegWriteW, ResultSrcW,
               Rs1D, Rs2D, Rs1E, Rs2E, RdE, RdM, RdW);
 
+forwarding_unit fu(Rs1E, Rs2E, RdM, RdW, RegWriteM, RegWriteW, ForwardAE, ForwardBE);
+
+
 endmodule
 
 
@@ -271,23 +274,23 @@ module datapath(input logic clk, reset,
   regfile        rf(clk, RegWriteW, Rs1D, Rs2D, RdW, ResultW, RD1D, RD2D);
   extend         ext(InstrD[31:7], ImmSrcD, ImmExtD);
  
-  // Execute stage pipeline register and logic
+  // Execute stage pipeline register and logic ---> ID/EX
   floprc #(175) regE(clk, reset, FlushE, 
                      {RD1D, RD2D, PCD, Rs1D, Rs2D, RdD, ImmExtD, PCPlus4D}, 
                      {RD1E, RD2E, PCE, Rs1E, Rs2E, RdE, ImmExtE, PCPlus4E});
 	
-  mux3   #(32)  faemux(RD1E, ResultW, ALUResultM, ForwardAE, SrcAE);
-  mux3   #(32)  fbemux(RD2E, ResultW, ALUResultM, ForwardBE, WriteDataE);
+  mux3   #(32)  faemux(RD1E, ResultW, ALUResultM, ForwardAE, SrcAE); // Reg(A)
+  mux3   #(32)  fbemux(RD2E, ResultW, ALUResultM, ForwardBE, WriteDataE); // Reg(B)
   mux2   #(32)  srcbmux(WriteDataE, ImmExtE, ALUSrcE, SrcBE);
   alu           alu(SrcAE, SrcBE, ALUControlE, ALUResultE, ZeroE);
   adder         branchadd(ImmExtE, PCE, PCTargetE);
 
-  // Memory stage pipeline register
+  // Memory stage pipeline register ---> EX/MEM
   flopr  #(101) regM(clk, reset, 
                      {ALUResultE, WriteDataE, RdE, PCPlus4E},
                      {ALUResultM, WriteDataM, RdM, PCPlus4M});
 	
-  // Writeback stage pipeline register and logic
+  // Writeback stage pipeline register and logic ---> MEM/WB
   flopr  #(101) regW(clk, reset, 
                      {ALUResultM, ReadDataM, RdM, PCPlus4M},
                      {ALUResultW, ReadDataW, RdW, PCPlus4W});
@@ -454,6 +457,39 @@ module alu(input  logic [31:0] a, b,
 
   assign zero = (result == 32'b0);
   assign v = ~(alucontrol[0] ^ a[31] ^ b[31]) & (a[31] ^ sum[31]) & isAddSub;
+
   
 endmodule
+
+
+module forwarding_unit(
+    input  logic [4:0] Rs1E, Rs2E,  // Registradores fonte (estágio EX)
+    input  logic [4:0] RdM, RdW,    // Registradores destino (MEM/WB)
+    input  logic       RegWriteM,   // Escrita no registrador (MEM)
+    input  logic       RegWriteW,   // Escrita no registrador (WB)
+    output logic [1:0] ForwardAE,   // Controle para operando A
+    output logic [1:0] ForwardBE    // Controle para operando B
+);
+
+// Lógica para ForwardAE
+always_comb begin
+    ForwardAE = 2'b00;  // Padrão: banco de registradores
+    // Forwarding do estágio MEM (EX/MEM)
+    if (RegWriteM && (RdM != 0) && (RdM == Rs1E)) 
+        ForwardAE = 2'b10;
+    // Forwarding do estágio WB (MEM/WB)
+    else if (RegWriteW && (RdW != 0) && (RdW == Rs1E))
+        ForwardAE = 2'b01;
+end
+
+// Lógica para ForwardBE (mesma estrutura)
+always_comb begin
+    ForwardBE = 2'b00;
+    if (RegWriteM && (RdM != 0) && (RdM == Rs2E)) 
+        ForwardBE = 2'b10;
+    else if (RegWriteW && (RdW != 0) && (RdW == Rs2E))
+        ForwardBE = 2'b01;
+end
+endmodule
+
 
