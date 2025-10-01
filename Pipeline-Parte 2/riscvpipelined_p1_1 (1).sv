@@ -492,4 +492,39 @@ always_comb begin
 end
 endmodule
 
+module hazard_detection_unit(
+    input  logic       MemReadE,    // Sinal de leitura de memória (EX)
+    input  logic [4:0] Rs1D, Rs2D,   // Registradores fonte (estágio ID)
+    input  logic [4:0] RdE,          // Registrador destino (estágio EX)
+    input  logic [1:0] ResultSrcE,   // Fonte do resultado (estágio EX)
+    input  logic       RegWriteE,    // Escrita no registrador (EX)
+    input  logic       RegWriteM,    // Escrita no registrador (MEM)
+    input  logic       RegWriteW,    // Escrita no registrador (WB)
+    input logic       PCSRCE,       // Sinal de controle de desvio (EX)
+    output logic       StallF,       // Sinal de stall para o estágio IF
+    output logic       StallD,       // Sinal de stall para o estágio ID
+    output logic       FlushD,       // Sinal de flush para o estágio ID
+    output logic       FlushE        // Sinal de flush para o estágio EX
+);
 
+always_comb begin
+  // Inicializa os sinais de controle
+    StallF = 1'b0;
+    StallD = 1'b0;
+    FlushD = 1'b0;
+    FlushE = 1'b0; 
+
+    // Detecção de hazard para o estágio IF
+    if (MemReadE && ((Rs1D == RdE) || (Rs2D == RdE))) begin
+        StallF = 1'b1; 
+        StallD = 1'b1;
+        FlushD = 1'b1;
+    end
+
+    // Detecção de hazard para o estágio EX
+    if (PCSRCE ||(MemReadE && (ResultSrcE == 2'b01) && (RdE != 5'b0))) begin
+        FlushE = 1'b1;
+    end
+end
+
+endmodule 
