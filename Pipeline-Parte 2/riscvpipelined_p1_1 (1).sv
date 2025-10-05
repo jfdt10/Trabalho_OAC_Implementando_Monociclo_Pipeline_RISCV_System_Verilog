@@ -458,6 +458,15 @@ module alu(input  logic [31:0] a, b,
   assign v = ~(alucontrol[0] ^ a[31] ^ b[31]) & (a[31] ^ sum[31]) & isAddSub;
 endmodule
 
+/* Forwarding Unit and Hazard Detection Unit
+
+Na Forwarding Unit, usa os sinais ForwardAE e ForwardBE para selecionar a fonte correta dos operandos A e B no estágio EX. 
+Se houver um hazard, redireciona os dados do estágio MEM ou WB para evitar stalls desnecessários.
+Na Hazard Detection Unit, detecta situações onde um stall é necessário, como quando uma instrução depende do resultado de uma instrução anterior que ainda não foi escrita de volta e não é possível fazer forwarding (por exemplo, load-use hazard).
+E também lida com flushes quando há desvios, garantindo que instruções incorretas sejam descartadas. Ex: beq  x4, x0, around (Esse x4 depende do resultado da instrução anterior, então a unidade de detecção de hazard deve dar uma clear na instrução de desvio e na próxima instrução que está sendo buscada).
+
+*/
+
 module forwarding_unit(
   input  logic [4:0] Rs1E, Rs2E,  // Registradores fonte (estágio EX)
   input  logic [4:0] RdM, RdW,    // Registradores destino (MEM/WB)
@@ -471,19 +480,19 @@ module forwarding_unit(
   always_comb begin
   ForwardAE = 2'b00;  // Padrão: banco de registradores
   // Forwarding do estágio MEM (EX/MEM)
-  if (RegWriteM && (RdM != 0) && (RdM == Rs1E)) 
+  if (RegWriteM && (RdM != 0) && (RdM == Rs1E)) // RegwriteM(Registrador de transição entre a fase de Execução e Memória) se for igual a 1, ou seja, se houver escrita no registrador e o registrador destino (RdM) for diferente de 0 e igual ao registrador fonte (Rs1E) então o sinal de encaminhamento ForwardAE recebe 2'b10 (10 = estágio MEM)
     ForwardAE = 2'b10;
   // Forwarding do estágio WB (MEM/WB)
-  else if (RegWriteW && (RdW != 0) && (RdW == Rs1E))
+  else if (RegWriteW && (RdW != 0) && (RdW == Rs1E)) // RegwriteW(Registrador de transição de Memória para Write Back(escrita no registrador de destino) se for igual a 1, ou seja, se houver escrita no registrador e o registrador destino (RdW) for diferente de 0 e igual ao registrador fonte (Rs1E) então o sinal de encaminhamento ForwardAE recebe 2'b01 (01 = estágio WB)
     ForwardAE = 2'b01;
   end
 
   // Lógica para ForwardBE (mesma estrutura)
   always_comb begin
   ForwardBE = 2'b00;
-  if (RegWriteM && (RdM != 0) && (RdM == Rs2E)) 
+  if (RegWriteM && (RdM != 0) && (RdM == Rs2E))  // Análogo ao ForwardAE, mas para o segundo operando (Rs2E)
     ForwardBE = 2'b10;
-  else if (RegWriteW && (RdW != 0) && (RdW == Rs2E))
+  else if (RegWriteW && (RdW != 0) && (RdW == Rs2E)) // Análogo ao ForwardAE, mas para o segundo operando (Rs2E)
     ForwardBE = 2'b01;
   end
 endmodule
@@ -493,29 +502,29 @@ module hazard_detection_unit(
   input  logic [4:0] RdE,          // Registrador destino (estágio EX)
   input  logic  ResultSrcEb0, // Sinal de controle do estágio EX (bit 0)
   input  logic       PCSrcE,       // Sinal de controle de desvio (EX)
-  output logic       StallF,       // Sinal de stall para o estágio IF
-  output logic       StallD,       // Sinal de stall para o estágio ID
-  output logic       FlushD,       // Sinal de flush para o estágio ID
-  output logic       FlushE        // Sinal de flush para o estágio EX
+  output logic       StallF,       // Sinal de stall para o estágio IF - usado para pausar a busca de instruções(bolha na instrução de busca)
+  output logic       StallD,       // Sinal de stall para o estágio ID - usado para pausar a decodificação de instruções(bolha na instrução de decodificação)
+  output logic       FlushD,       // Sinal de flush para o estágio ID - usado para limpar instruções erradas em caso de desvio(atrasar a instrução de desvio e a próxima instrução que está sendo buscada)
+  output logic       FlushE        // Sinal de flush para o estágio EX - usado para limpar instruções erradas em caso de desvio(atrasar a instrução de desvio e a próxima instrução que está sendo buscada)
 );
 
   always_comb begin
   // Inicializa os sinais de controle
-  StallF = 1'b0;
-  StallD = 1'b0;
-  FlushD = 1'b0;
-  FlushE = 1'b0;
+  StallF = 1'b0; // Inicializa StallF como 0 (sem stall) - F é o estágio de busca(fetch)
+  StallD = 1'b0; // Inicializa StallD como 0 (sem stall) - D é o estágio de decodificação(decode)
+  FlushD = 1'b0; // Inicializa FlushD como 0 (sem flush)- ID é o estágio de decodificação(decode)
+  FlushE = 1'b0; // Inicializa FlushE como 0 (sem flush) - EX é o estágio de execução(execute)
 
   // Detecção de hazard para o estágio IF
-  if ((ResultSrcEb0 == 1) && (RdE != 0) && ((Rs1D == RdE) || (Rs2D == RdE))) begin
-    StallF = 1'b1; 
-    StallD = 1'b1;
-    FlushE = 1'b1;
+  if ((ResultSrcEb0 == 1) && (RdE != 0) && ((Rs1D == RdE) || (Rs2D == RdE))) begin // Está está na fase de  Execução e é um lw(load word)(ResultSrcEb0 == 1) e o registrador destino (RdE) é diferente de 0 e o registrador fonte (Rs1D ou Rs2D) é igual ao registrador destino (RdE)
+    StallF = 1'b1; // Se houver hazard, StallF é ativado (1) - Pausa a busca de instruções(bolha)
+    StallD = 1'b1; // Se houver hazard, StallD é ativado (1) - Pausa a decodificação de instruções (bolha)
+    FlushE = 1'b1; // Se houver hazard, FlushE é ativado (1) - Limpa a instrução no estágio EX
   end
   // Flush no estágio ID e EX se houver desvio
   else if (PCSrcE) begin
-    FlushD = 1'b1;
-    FlushE = 1'b1; 
+    FlushD = 1'b1; // Se tiver instrução beq ou jal (PCSrcE = 1), FlushD = 1 (limpa a instrução de desvio e a próxima instrução que está sendo buscada)
+    FlushE = 1'b1; // Se tiver instrução beq ou jal (PCSrcE = 1), FlushE = 1 (limpa a instrução de desvio e a próxima instrução que está sendo buscada)
   end
   end
 endmodule 
