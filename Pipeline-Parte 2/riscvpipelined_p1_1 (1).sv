@@ -1,3 +1,20 @@
+/*
+Resumo das Adições:
+1. Forwarding Unit (Unidade de Encaminhamento):
+    - Inputs: Rs1E, Rs2E, RdM, RdW, Reg
+WriteM, RegWriteW
+    - Outputs: ForwardAE, ForwardBE
+    - Função: Detecta hazards de dados e encaminha os dados corretos para os operandos A e B no estágio EX, evitando stalls desnecessários.
+2. Hazard Detection Unit (Unidade de Detecção de Hazard):
+    - Inputs: Rs1D, Rs2D, RdE, ResultSrcEb0
+    - Outputs: StallF, StallD, FlushD, FlushE
+    - Função: Detecta situações onde um stall é necessário (por exemplo, load-use) e controla flushes em caso de desvios.
+3. Integração:
+    - A Forwarding Unit é instanciada dentro do módulo riscv e conectada aos sinais apropriados.
+    - A Hazard Detection Unit também é instanciada dentro do módulo riscv, controlando os sinais de stall e flush.
+    - Modificações foram feitas no datapath para incluir os sinais de forwarding e hazard detection.
+
+ */
 `timescale 1ns/1ps
 module testbench();
 
@@ -475,7 +492,11 @@ module forwarding_unit(
   output logic [1:0] ForwardAE,   // Controle para operando A
   output logic [1:0] ForwardBE    // Controle para operando B
 );
-
+  // Corrige "double data hazard":
+  // - Dá precedência ao resultado mais recente em EX/MEM (RdM).
+  // - Só usa MEM/WB (RdW) se EX/MEM não corresponder.
+  // Isso evita encaminhar um valor mais antigo da fase WB quando já
+  // existe um valor mais novo na fase MEM.
   // Lógica para ForwardAE
   always_comb begin
   ForwardAE = 2'b00;  // Padrão: banco de registradores
@@ -496,6 +517,12 @@ module forwarding_unit(
     ForwardBE = 2'b01;
   end
 endmodule
+
+// Hazard detection unit:
+// - ResultSrcEb0 = 1 => EX é load (load-use hazard).
+// - Se load-use (RdE != 0 && (RdE == Rs1D || RdE == Rs2D)) => StallF=StallD=1, FlushE=1.
+// - Se branch/jump (PCSrcE) => FlushD=FlushE=1.
+// - Protege x0 e instr. que não escrevem (checks já presentes).
 
 module hazard_detection_unit(
   input  logic [4:0] Rs1D, Rs2D,   // Registradores fonte (estágio ID)
